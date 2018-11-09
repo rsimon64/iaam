@@ -1,0 +1,292 @@
+---
+title: "Intro Inteligencia Artificial y Aprendizaje de Máquina"
+author: Reinhard Simon
+output: html_document
+---
+
+
+
+
+```{r load}
+library(caret)
+orange <- readRDS("orange.rds")
+
+```
+
+# Conocer los datos
+
+```{r str}
+str(orange)
+```
+
+```{r ver}
+knitr::kable(
+  head(orange[, 1:10])
+)
+```
+
+# Separar dataset in 'formar' (train) y 'validar' (validate)
+
+```{r}
+set.seed(100)
+
+# Paso 1: Obtener número de filas
+trainRowNumbers <- createDataPartition(orange$Purchase, p=0.8, list=FALSE)
+
+# Paso 2: Crear datos de entrenamientos
+trainData <- orange[trainRowNumbers,]
+
+# Paso 3: Crear datos de validacion
+testData <- orange[-trainRowNumbers,]
+
+# Guardar para uso posterior
+x = trainData[, 2:18]
+y = trainData$Purchase
+```
+
+# Resúmen descriptivo
+
+```{r skimr}
+library(skimr)
+skimmed <- skim_to_wide(trainData)
+knitr::kable(skimmed[, c(1:5, 9:11, 13, 15:16)])
+```
+
+# Preprocesar datos
+
+## Imputar datos faltantes
+
+1. Creando un modelo
+
+```{r immputar}
+preProcess_missingdata_model <- preProcess(trainData, method='knnImpute')
+preProcess_missingdata_model
+```
+
+2. Aplicando model
+
+```{r imputarAplicar}
+library(RANN)  # required for knnInpute
+trainData <- predict(preProcess_missingdata_model, newdata = trainData)
+
+# Chequear que no haya mas datos faltantes
+anyNA(trainData)
+```
+
+## Convertir factores a datos binarios (one-hot encoding)
+
+Requerido para muchos algoritmos
+
+```{r}
+dummies_model <- dummyVars(Purchase ~ ., data=trainData)
+
+# Crear
+trainData_mat <- predict(dummies_model, newdata = trainData)
+
+# Convertir
+trainData <- data.frame(trainData_mat)
+
+# Revisar
+str(trainData)
+```
+
+## Convertir todos los variables a la misma escala
+
+```{r}
+preProcess_range_model <- preProcess(trainData, method='range')
+trainData <- predict(preProcess_range_model, newdata = trainData)
+
+# Agregar Y
+trainData$Purchase <- y
+
+apply(trainData[, 1:10], 2, FUN=function(x){c('min'=min(x), 'max'=max(x))})
+```
+
+# Revisar importancia de variables
+
+```{r fpBox}
+featurePlot(x = trainData[, 1:18], 
+            y = trainData$Purchase, 
+            plot = "box",
+            strip=strip.custom(par.strip.text=list(cex=.7)),
+            scales = list(x = list(relation="free"), 
+                          y = list(relation="free")))
+```
+
+```{r fpDensity}
+featurePlot(x = trainData[, 1:18], 
+            y = trainData$Purchase, 
+            plot = "density",
+            strip=strip.custom(par.strip.text=list(cex=.7)),
+            scales = list(x = list(relation="free"), 
+                          y = list(relation="free")))
+```
+
+# Selección automatica de variables importantes (recursive feature elimination)
+
+```{r rfe}
+set.seed(100)
+options(warn=-1)
+
+subsets <- c(1:5, 10, 15, 18)
+
+ctrl <- rfeControl(functions = rfFuncs,
+                   method = "repeatedcv",
+                   repeats = 5,
+                   verbose = FALSE)
+
+lmProfile <- rfe(x=trainData[, 1:18], y=trainData$Purchase,
+                 sizes = subsets,
+                 rfeControl = ctrl)
+
+lmProfile
+```
+
+# Formar y validar un modelo
+
+```{r modelos}
+modelnames <- paste(names(getModelInfo()), collapse=',  ')
+modelnames
+```
+
+# MARS (Multivariate Adaptive Regression Splines)
+
+Ver parametros
+
+```{r earth}
+modelLookup('earth')
+```
+
+```{r}
+set.seed(100)
+  
+model_mars = train(Purchase ~ ., data=trainData, method='earth')
+fitted <- predict(model_mars)
+```
+
+```{r model_mars}
+model_mars
+```
+
+```{r revisar_model_mars}
+plot(model_mars, main="Model Accuracies with MARS")
+```
+
+```{r varimp_modelo}
+varimp_mars <- varImp(model_mars)
+plot(varimp_mars, main="Variable Importance with MARS")
+```
+
+# Validar!
+
+## Preprocesamiento
+
+La misma secuencia de pasos como para 'formar'.
+Importante que sea separado para que no se incluye conocimiento completo!
+
+Caret guarda los detalles de los pasos en sus modelos.
+
+```{r}
+testData2 <- predict(preProcess_missingdata_model, testData)  
+
+testData3 <- predict(dummies_model, testData2)
+
+testData4 <- predict(preProcess_range_model, testData3)
+
+head(testData4[, 1:10])
+```
+
+## Prediccion
+
+```{r}
+predicted <- predict(model_mars, testData4)
+head(predicted)
+```
+
+## Matriz de confusión
+
+```{r}
+confusionMatrix(reference = testData$Purchase, data = predicted, mode='everything', positive='MM')
+```
+
+# Optimizar hiper-parametros
+
+```{r}
+fitControl <- trainControl(
+    method = 'cv',                   # k-fold cross validation
+    number = 5,                      # number of folds
+    savePredictions = 'final',       # saves predictions for optimal tuning parameter
+    classProbs = T,                  # should class probabilities be returned
+    summaryFunction=twoClassSummary  # results summary function
+) 
+```
+
+## Usando metodo de optimización 'tuneLength'
+
+```{r}
+
+set.seed(100)
+model_mars2 = train(Purchase ~ ., data=trainData, method='earth', tuneLength = 5, metric='ROC', trControl = fitControl)
+model_mars2
+
+
+predicted2 <- predict(model_mars2, testData4)
+confusionMatrix(reference = testData$Purchase, data = predicted2, mode='everything', positive='MM')
+```
+
+# Otros metodos populares
+
+## RandomForest
+
+```{r}
+set.seed(100)
+
+model_rf = train(Purchase ~ ., data=trainData, method='rf', tuneLength=5, trControl = fitControl)
+model_rf
+```
+
+## SVM
+
+```{r}
+set.seed(100)
+
+# Train the model using MARS
+model_svmRadial = train(Purchase ~ ., data=trainData, method='svmRadial', tuneLength=15, trControl = fitControl)
+model_svmRadial
+```
+
+## Red neuronal
+
+```{r}
+model_nn = train(Purchase ~ ., data=trainData, method='nnet', tuneLength=15, trControl = fitControl)
+model_nn
+```
+
+# Comparar diferentes metodos
+
+```{r}
+models_compare <- resamples(list( MARS=model_mars2,
+  RF=model_rf,  SVM=model_svmRadial, NN=model_nn))
+
+# Summary of the models performances
+summary(models_compare)
+```
+
+True Positive = TP 
+False Positive = FP = alarma falsa
+
+True Negative = TN
+False Negative = FN
+
+Sensitivity = TP / (TP + FN) = TPR = recall
+
+Specificity = TN / (TN + FP) = FPR
+
+ROC = TPR (y) vs FPR(x)
+
+```{r}
+scales <- list(x=list(relation="free"), y=list(relation="free"))
+bwplot(models_compare, scales=scales)
+```
+
+

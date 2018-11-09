@@ -1,0 +1,43 @@
+---
+title: "intro"
+author: "Reinhard Simon"
+date: "11/9/2018"
+output: html_document
+---
+
+# Intro
+
+## Motivación
+
+- datos masivos
+- datos no estructurados
+
+## Tipos basicos
+
+- Regression
+- Classificación
+
+# Regresión
+
+## Regresión simple
+
+![Regresion](reg.gif)
+
+## MARS
+
+![MARS](mars.jpeg)
+
+# Clasificación
+
+## Arboles de decisión (randomForest)
+![RF](rf.png)
+
+## SVM
+
+![SVM](svm.jpg)
+
+
+## Red neuronal
+
+![NN](nn.gif)
+
