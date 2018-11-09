@@ -11,10 +11,15 @@ output: html_document
 
 ## Librerias especializadas: tensorflow, keras
 
+```{r eval=FALSE}
+# Solo una vez!
+keras::install_keras()
+```
+
 
 ```{r keras, eval=FALSE}
 library(keras)
-# keras::install_keras()
+
 
 library(tidyverse)
 
